@@ -1,0 +1,12 @@
+{
+	"name": "decs",
+	"authors": [
+		"ryuukk_"
+	],
+    "description": "ECS lib without STD and without the GC",
+	"importPaths": ["src"],
+	"sourcePaths": ["src"],
+	"targetPath": "bin",
+	"license": "public domain",
+	"targetType": "sourceLibrary"
+}
