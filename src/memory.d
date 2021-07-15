@@ -17,7 +17,7 @@ struct Allocator
 	void function(Allocator*, void*) vt_free;
 
 
-	Allocator* ptr()
+	Allocator* ptr() return
 	{
 		return &this;
 	}
