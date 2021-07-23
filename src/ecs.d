@@ -137,23 +137,20 @@ struct Optional(T)
     //}
 }
 
-Index extractId(Entity handle)
+Index extract_id(Entity handle)
 {
-    // TODO: cast should be fine, but double check if errors occurs
-    return  handle & entity_mask;
+    return handle & entity_mask;
 }
 
-Version extractVersion(Entity handle)
+Version extract_version(Entity handle)
 {
-    // TODO: cast should be fine, but double check if errors occurs
-    return cast(Version)(handle >> entity_shift);
+    auto mask = cast(Entity)(version_mask) << entity_shift;
+    return cast(Version)((handle & mask) >> entity_shift);
 }
 
 Entity forge(Index id, Version versionn)
 {
-    // HandleType, IndexType, VersionType
-    //      ulong,      uint,        uint
-    return id | cast(Entity)(versionn) << entity_shift;
+    return (id & entity_mask) | (cast(Entity)(versionn) << entity_shift);
 }
 
 struct TypeStore
@@ -210,7 +207,8 @@ struct RegistryImpl(EntityType, IndexType, VersionType)
     EntityType[] entities;
     IndexType append_cursor = 0;
     Optional!IndexType last_destroyed;
-    enum invalid_id = IndexType.max;
+    
+    enum invalid_id = entity_mask;
 
     static Registry create(Allocator* allocator)
     {
@@ -228,7 +226,7 @@ struct RegistryImpl(EntityType, IndexType, VersionType)
 
     bool valid(Entity entity)
     {
-        auto id = extractId(entity);
+        auto id = extract_id(entity);
         return id < append_cursor && entities[id] == entity;
     }
 
@@ -273,17 +271,14 @@ struct RegistryImpl(EntityType, IndexType, VersionType)
             return handle;
         }
 
-        auto versionn = extractVersion(entities[last_destroyed.value]);
-        auto destroyed_id = extractId(entities[last_destroyed.value]);
+        auto versionn = extract_version(entities[last_destroyed.value]);
+        auto destroyed_id =  extract_id(entities[last_destroyed.value]);
 
         auto handle = forge(last_destroyed.value, versionn);
         entities[last_destroyed.value] = handle;
 
         // TODO: redo this optional bullshit
-        last_destroyed = (destroyed_id == invalid_id) ?
-            Optional!(IndexType)(entity_mask, false) : Optional!(IndexType)(destroyed_id, true);
-
-        //printf("\thandle: %llu, destroyed_id: %lu,  last_destroyed: %lu :: invalid: %lu\n", handle, destroyed_id, last_destroyed.value, invalid_id);
+        last_destroyed = (destroyed_id == invalid_id) ? Optional!(IndexType)(entity_mask, false) : Optional!(IndexType)(destroyed_id, true); // destroyed_id;
         return handle;
     }
 
@@ -292,7 +287,7 @@ struct RegistryImpl(EntityType, IndexType, VersionType)
         assert(valid(entity));
         removeAll(entity);
 
-        auto id = extractId(entity);
+        auto id = extract_id(entity);
         if (id > append_cursor || entities[id] != entity)
             panic("RemovedInvalidHandle");
 
@@ -304,7 +299,7 @@ struct RegistryImpl(EntityType, IndexType, VersionType)
 
         //printf("\tnext_id: %lu\n", next_id);
 
-        auto versionn = extractVersion(entity);
+        auto versionn = extract_version(entity);
         entities[id] = forge(next_id, versionn + 1);
 
         last_destroyed = Optional!(IndexType)(id, true);
@@ -685,7 +680,7 @@ unittest
     //} );
 }
 
-@("ecs")
+@("ecs - views")
 unittest
 {
     import std.stdio: writeln;
@@ -746,4 +741,40 @@ unittest
         assert(viewExclude.get!(Pos01)(e));
         assert(!viewExclude.valid!(Empty));
     }
+}
+
+@("ecs - large entity count")
+unittest
+{
+    struct A{}
+    struct B{int[10] large;}
+    auto registry = Registry.create(MALLOCATOR.ptr);
+
+    auto a = Array!(Entity).createWith(MALLOCATOR.ptr);
+    for(size_t i = 0; i < 0xFFFFFFFF + 1000; i++)
+    {
+        auto e = registry.create_entity();
+        registry.add(e, A());
+        registry.add(e, B());
+        a.add(e); 
+    }
+    foreach(Entity e; a)
+    {
+        assert(registry.has!(A)(e));
+        assert(registry.has!(B)(e));
+        registry.destroy_entity(e);
+    }
+    a.clear();    
+    for(size_t i = 0; i < 0xFFFFFFFF + 1000; i++)
+    {
+        auto e = registry.create_entity();
+        registry.add(e, A());
+        registry.add(e, B());
+        a.add(e); 
+    }
+    foreach(Entity e; a)
+    {
+        registry.destroy_entity(e);
+    }
+    a.clear();
 }
